@@ -67,17 +67,36 @@ class ChapterPerDocumentTest(EpubTestCase):
 
 @requires_pandoc
 class NavigationDocumentTest(EpubTestCase):
-    def test_epub3_nav_with_plain_anchors_falls_through_to_the_spine(self):
-        # CHARACTERIZATION OF A BUG: see NavParsingTest.  A nav-only EPUB 3 book
-        # never uses its TOC; titles come from headings in the spine documents.
+    def test_a_nav_only_book_uses_its_navigation_document(self):
         result, out = self.convert(simple_book(toc="nav"))
-        self.assertIn("Using spine: 3 files", result.stdout)
+        self.assertIn("Found 3 entries in toc", result.stdout)
+        self.assertNotIn("Using spine", result.stdout)
         self.assertEqual(
             self.markdown_files(out),
             ["01-chapter-one.md", "02-chapter-two.md", "03-chapter-three.md"],
         )
 
-    def test_epub3_nav_is_used_when_anchors_contain_markup(self):
+    def test_nav_titles_win_over_headings_in_the_documents(self):
+        b = EpubBuilder()
+        b.add_item("text/ch01.xhtml", chapter("Heading Text"))
+        b.set_nav([("Navigation Title", "text/ch01.xhtml")])
+        _, out = self.convert(b)
+        self.assertEqual(self.markdown_files(out), ["01-navigation-title.md"])
+
+    def test_nested_nav_documents_split_at_the_detected_depth(self):
+        b = EpubBuilder()
+        b.add_chapter("text/p1.xhtml", "Part One")
+        b.add_chapter("text/ch01.xhtml", "Chapter One")
+        b.add_chapter("text/ch02.xhtml", "Chapter Two")
+        b.set_nav([("Part One", "text/p1.xhtml", [
+            ("Chapter One", "text/ch01.xhtml"),
+            ("Chapter Two", "text/ch02.xhtml")])])
+        _, out = self.convert(b)
+        self.assertEqual(
+            self.markdown_files(out),
+            ["01-part-one.md", "02-chapter-one.md", "03-chapter-two.md"])
+
+    def test_anchors_containing_markup_are_still_read(self):
         b = simple_book(toc="nav")
         b.items = [i for i in b.items if i["id"] != "nav"]
         b.set_nav(content=nav_with_markup(

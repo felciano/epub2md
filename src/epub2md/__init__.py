@@ -195,12 +195,6 @@ def _read_spine(spine_el, manifest):
     index += 1
   return items
 
-def _anchor_present(a):
-  # Historical behaviour: the original walkers tested `if a:`, which ElementTree
-  # answers with the child-element count rather than existence.  Preserved here
-  # so this refactor stays behaviour-neutral.
-  return a is not None and len(a) > 0
-
 class _TocBuilder:
   def __init__(self, base_href):
     self.base_href, self.entries = base_href, []
@@ -230,7 +224,7 @@ def _walk_nav(tree, base_href):
       elif name == "li":
         a = next((s for s in child.iter() if _ln(s.tag) == "a"), None)
         entry = None
-        if _anchor_present(a):
+        if a is not None:
           href, _, frag = a.attrib.get("href", "").partition("#")
           entry = builder.add("".join(a.itertext()).strip() or "untitled",
                               href, frag, depth, parent)

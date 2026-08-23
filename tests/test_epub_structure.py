@@ -172,28 +172,30 @@ class NavWalkTest(EpubTestCase):
         path.write_text(content, encoding="utf-8")
         return E._walk_nav(E._parse_xml(path), base)
 
-    def test_plain_anchors_are_currently_ignored(self):
-        # CHARACTERIZATION OF A BUG: `_anchor_present` reproduces the original
-        # `if a:` test, which ElementTree answers with the child-element count,
-        # so <a href="x">Title</a> reads as absent and EPUB 3 navigation
-        # documents yield nothing.
-        self.assertEqual(self.walk(nav_document([("A", "a.xhtml")])), [])
-
-    def test_anchors_containing_markup_are_parsed(self):
-        entries = self.walk(nav_with_markup([("A", "a.xhtml"), ("B", "b.xhtml")]))
+    def test_plain_anchors_are_parsed(self):
+        entries = self.walk(nav_document([("A", "a.xhtml"), ("B", "b.xhtml")]))
         self.assertEqual([(e.title, e.href, e.depth) for e in entries],
                          [("A", "a.xhtml", 1), ("B", "b.xhtml", 1)])
 
+    def test_anchors_containing_markup_are_flattened_to_their_text(self):
+        entries = self.walk(nav_with_markup([("A", "a.xhtml"), ("B", "b.xhtml")]))
+        self.assertEqual([e.title for e in entries], ["A", "B"])
+
     def test_nested_lists_increase_depth(self):
-        entries = self.walk(nav_with_markup(NESTED))
+        entries = self.walk(nav_document(NESTED))
         self.assertEqual([(e.title, e.depth) for e in entries],
                          [("Part One", 1), ("Chapter One", 2), ("Section 1", 3),
                           ("Section 2", 3), ("Chapter Two", 2), ("Section 3", 3)])
         self.assertEqual(entries[2].path, ("Part One", "Chapter One", "Section 1"))
 
     def test_bare_fragment_hrefs_have_no_document_target(self):
-        raw = nav_with_markup([("A", "#local")])
-        self.assertEqual(self.walk(raw)[0].href, "")
+        self.assertEqual(self.walk(nav_document([("A", "#local")]))[0].href, "")
+
+    def test_anchors_without_an_href_still_occupy_a_level(self):
+        entries = self.walk(nav_document([("Unlinked", None, [("Child", "a.xhtml")])]))
+        self.assertEqual([(e.title, e.href, e.depth) for e in entries],
+                         [("Unlinked", "", 1), ("Child", "a.xhtml", 2)])
+        self.assertFalse(entries[0].targets_document)
 
     def test_toc_nav_is_preferred_over_other_navs(self):
         raw = xhtml(
@@ -214,20 +216,24 @@ class NavWalkTest(EpubTestCase):
 
 
 class TocSelectionTest(EpubTestCase):
-    def test_ncx_is_used_when_the_nav_yields_nothing(self):
+    def test_the_nav_document_wins_when_both_are_present(self):
         package = E.read_package(self.tree(simple_book(toc="both")))
-        self.assertEqual(package.toc_source, "epub2-ncx")
-        self.assertEqual(package.toc_href, "OEBPS/toc.ncx")
+        self.assertEqual(package.toc_source, "epub3-nav")
+        self.assertEqual(package.toc_href, "OEBPS/nav.xhtml")
         self.assertEqual([e.title for e in package.toc],
                          ["Chapter One", "Chapter Two", "Chapter Three"])
 
-    def test_nav_wins_when_it_parses(self):
+    def test_the_ncx_is_used_when_there_is_no_nav_document(self):
+        package = E.read_package(self.tree(simple_book(toc="ncx")))
+        self.assertEqual(package.toc_source, "epub2-ncx")
+        self.assertEqual(package.toc_href, "OEBPS/toc.ncx")
+
+    def test_an_empty_nav_document_falls_through_to_the_ncx(self):
         b = simple_book(toc="both")
         b.items = [i for i in b.items if i["id"] != "nav"]
-        b.set_nav(content=nav_with_markup([("Chapter One", "text/ch01.xhtml")]))
+        b.set_nav(content=xhtml("Nav", "<nav><ol></ol></nav>"))
         package = E.read_package(self.tree(b))
-        self.assertEqual(package.toc_source, "epub3-nav")
-        self.assertEqual(package.toc_href, "OEBPS/nav.xhtml")
+        self.assertEqual(package.toc_source, "epub2-ncx")
 
     def test_ncx_is_found_by_media_type_without_a_spine_toc_attribute(self):
         b = simple_book(toc="ncx")
