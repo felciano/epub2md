@@ -55,6 +55,33 @@ def _resolve(base_href, href):
 # Package model
 # --------------------------------------------------------------------------
 
+# Dublin Core elements worth keeping, as (element name, field name).  Every one
+# of them may legitimately repeat, so every value is a list.
+DC_FIELDS = (
+  ("title", "titles"), ("creator", "creators"), ("contributor", "contributors"),
+  ("language", "languages"), ("identifier", "identifiers"),
+  ("publisher", "publishers"), ("date", "dates"), ("subject", "subjects"),
+  ("rights", "rights"), ("description", "descriptions"))
+
+@dataclass
+class BookMetadata:
+  """Dublin Core metadata from the package document, in document order."""
+  titles: List[str] = field(default_factory=list)
+  creators: List[str] = field(default_factory=list)
+  contributors: List[str] = field(default_factory=list)
+  languages: List[str] = field(default_factory=list)
+  identifiers: List[str] = field(default_factory=list)
+  publishers: List[str] = field(default_factory=list)
+  dates: List[str] = field(default_factory=list)
+  subjects: List[str] = field(default_factory=list)
+  rights: List[str] = field(default_factory=list)
+  descriptions: List[str] = field(default_factory=list)
+
+  @property
+  def title(self):
+    """The first title, or None."""
+    return self.titles[0] if self.titles else None
+
 @dataclass
 class ManifestItem:
   id: str
@@ -99,6 +126,7 @@ class EpubPackage:
   """
   root: Path
   opf_href: str
+  metadata: BookMetadata
   manifest: Dict[str, ManifestItem]
   spine: List[SpineItem]
   toc: List[TocEntry] = field(default_factory=list)
@@ -131,6 +159,16 @@ def _find_opf(root):
   if rf is None or not (fp := rf.attrib.get("full-path")): return None
   opf = root / fp
   return opf if opf.exists() else None
+
+def _read_metadata(pkg, ns):
+  el = pkg.find("opf:metadata", ns)
+  fields = dict(DC_FIELDS)
+  values = {name: [] for name in fields.values()}
+  for child in (el if el is not None else []):
+    name = fields.get(_ln(child.tag))
+    if name is None: continue
+    if text := (child.text or "").strip(): values[name].append(text)
+  return BookMetadata(**values)
 
 def _read_manifest(pkg, ns, opf_href):
   mel = pkg.find("opf:manifest", ns)
@@ -245,7 +283,8 @@ def read_package(root):
   manifest = _read_manifest(pkg, ns, opf_href)
   spine_el = pkg.find("opf:spine", ns)
   toc, source, toc_href = _read_toc(root, opf_href, manifest, spine_el)
-  return EpubPackage(root=root, opf_href=opf_href, manifest=manifest,
+  return EpubPackage(root=root, opf_href=opf_href,
+                     metadata=_read_metadata(pkg, ns), manifest=manifest,
                      spine=_read_spine(spine_el, manifest), toc=toc,
                      toc_source=source, toc_href=toc_href)
 
