@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import epub2md as E
-from epub_fixtures import EpubBuilder, EpubTestCase, simple_book
+from epub_fixtures import EpubTestCase, simple_book
 
 
 class MetadataTest(EpubTestCase):
