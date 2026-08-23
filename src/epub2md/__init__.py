@@ -18,7 +18,7 @@ function Plain(el)
   if el.content and #el.content==1 and el.content[1].t=='Str' and el.content[1].text=='\\\\' then return {} end
   return el
 end
-function Image(el) el.classes={} el.attributes={} return el end
+function Image(el) el.classes={} el.attributes={} el.identifier='' return el end
 """
 
 DOC_EXT = (".xhtml", ".html", ".htm")

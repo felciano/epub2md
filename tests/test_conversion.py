@@ -392,6 +392,21 @@ class ImageExtractionTest(EpubTestCase):
         self.assertIn("![dot](images/pixel.png)", text)
         self.assertTrue((out / "images" / "pixel.png").exists())
 
+    def test_an_image_carrying_an_id_still_emits_markdown(self):
+        b = EpubBuilder()
+        b.add_item("pixel.png", PIXEL_PNG, media_type="image/png", in_spine=False)
+        b.add_item("ch01.xhtml", (
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Figures</h1>'
+            '<p><img src="pixel.png" id="image_page_1" class="fig" alt="dot"/></p>'
+            "</body></html>"))
+        b.set_ncx([("Figures", "ch01.xhtml")])
+        _, out = self.convert(b)
+        text = self.read(out, "01-figures.md")
+        self.assertIn("![dot](images/pixel.png)", text)
+        self.assertNotIn("<img", text)
+        self.assertNotIn("image_page_1", text)
+
     def test_images_survive_fragment_slicing(self):
         b = EpubBuilder()
         b.add_item("images/pixel.png", PIXEL_PNG, media_type="image/png",
