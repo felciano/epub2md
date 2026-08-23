@@ -150,17 +150,27 @@ class FragmentSplittingTest(EpubTestCase):
         self.assertIn("Front", first)
         self.assertNotIn("Chapter Two", first)
 
-    def test_percent_encoded_fragments_currently_disable_slicing(self):
-        # CHARACTERIZATION OF A BUG: the href is percent-decoded but the fragment
-        # is not, so the anchor is never found and the whole file is converted.
+    def test_percent_encoded_fragments_slice_correctly(self):
         b = EpubBuilder()
         b.add_item("text/all.xhtml", multi_section(
             [("sec-one", "Sec One"), ("sec-two", "Sec Two")], "All"))
         b.set_ncx([("Sec One", "text/all.xhtml#sec%2Done"),
-                   ("Sec Two", "text/all.xhtml#sec-two"),
-                   ("Tail", "text/all.xhtml")])
+                   ("Sec Two", "text/all.xhtml#sec-two")])
         _, out = self.convert(b)
-        self.assertIn("Sec Two", self.read(out, "01-sec-one.md"))
+        first = self.read(out, "01-sec-one.md")
+        self.assertIn("Sec One", first)
+        self.assertNotIn("Sec Two", first)
+
+    def test_percent_encoded_unicode_fragments_slice_correctly(self):
+        b = EpubBuilder()
+        b.add_item("text/all.xhtml", multi_section(
+            [("第一章", "One"), ("第二章", "Two")], "All"))
+        b.set_ncx([("One", "text/all.xhtml#%E7%AC%AC%E4%B8%80%E7%AB%A0"),
+                   ("Two", "text/all.xhtml#%E7%AC%AC%E4%BA%8C%E7%AB%A0")])
+        _, out = self.convert(b)
+        first = self.read(out, "01-one.md")
+        self.assertIn("One", first)
+        self.assertNotIn("Two", first)
 
     def test_a_missing_fragment_target_converts_the_whole_document(self):
         b = EpubBuilder()

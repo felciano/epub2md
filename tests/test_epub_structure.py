@@ -128,6 +128,14 @@ class NcxWalkTest(EpubTestCase):
         entry = self.walk([("A", "a.xhtml#one")])[0]
         self.assertEqual((entry.href, entry.fragment), ("a.xhtml", "one"))
 
+    def test_fragments_are_percent_decoded(self):
+        entry = self.walk([("A", "a.xhtml#sec%2Done")])[0]
+        self.assertEqual(entry.fragment, "sec-one")
+
+    def test_unicode_fragments_are_decoded(self):
+        entry = self.walk([("A", "a.xhtml#%E7%AC%AC%E4%B8%80%E7%AB%A0")])[0]
+        self.assertEqual(entry.fragment, "第一章")
+
     def test_hrefs_resolve_against_the_ncx_location(self):
         entry = self.walk([("A", "../text/a.xhtml")], base="OEBPS/nav/toc.ncx")[0]
         self.assertEqual(entry.href, "OEBPS/text/a.xhtml")
@@ -368,10 +376,11 @@ class AnchorTest(unittest.TestCase):
     def test_empty_anchor_returns_none(self):
         self.assertIsNone(E._find_anchor(self.TEXT, ""))
 
-    def test_percent_encoded_anchor_does_not_match(self):
-        # CHARACTERIZATION OF A BUG: hrefs are percent-decoded before use but
-        # fragments are not, so `#sec%2Done` never finds `id="sec-one"`.
+    def test_matching_expects_an_already_decoded_anchor(self):
+        # Fragments are percent-decoded when the TOC is parsed, so what reaches
+        # here is the literal id.
         self.assertIsNone(E._find_anchor('<div id="sec-one">', "sec%2Done"))
+        self.assertIsNotNone(E._find_anchor('<div id="sec-one">', "sec-one"))
 
 
 class ExtractSegmentTest(unittest.TestCase):

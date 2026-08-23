@@ -203,7 +203,7 @@ class _TocBuilder:
     entry = TocEntry(
       id="toc-%04d" % (len(self.entries) + 1), title=title,
       href=_resolve(self.base_href, href) if href else "",
-      fragment=fragment or None, depth=depth,
+      fragment=unquote(fragment) if fragment else None, depth=depth,
       parent_id=parent.id if parent else None,
       path=(parent.path if parent else ()) + ((title,) if title else ()))
     self.entries.append(entry)
