@@ -54,7 +54,12 @@ Ten Dublin Core fields, each **always a list of strings**, in document order:
 
 Lists rather than scalars because every one of these may legitimately repeat: a
 book can carry both an ISBN and a UUID, three authors, or a title and a subtitle.
+
 Values are copied from the EPUB verbatim; nothing is normalised or inferred.
+Consumers should treat them as untrusted text rather than clean labels: real
+books put HTML in `dc:description` (publisher blurbs arrive full of `<b>` and
+`<br>`), write dates in whatever format they please, and use `dc:identifier` for
+bare ISBNs as often as for `urn:` URIs.
 
 EPUB 3 `<meta>` refinements (`dcterms:modified`, `file-as`, roles) are not
 retained in version 1.
