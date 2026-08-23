@@ -6,10 +6,12 @@ fallbacks that are hard to reason about from the code alone.
 """
 import sys
 import unittest
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import epub2md as E
 from epub_fixtures import (
     EpubBuilder,
     EpubTestCase,
@@ -412,6 +414,34 @@ class CliContractTest(EpubTestCase):
         result = run_cli(self.tmp / "absent.epub")
         self.assertEqual(result.code, 1)
         self.assertIn("not found", result.error)
+
+
+class ArchiveExtractionTest(EpubTestCase):
+    def test_a_file_that_is_not_a_zip_reports_an_error(self):
+        bogus = self.tmp / "book.epub"
+        bogus.write_text("this is not an archive", encoding="utf-8")
+        result = run_cli(bogus, self.tmp / "out")
+        self.assertEqual(result.code, 1)
+        self.assertIn("cannot read book.epub", result.error)
+
+    def test_members_cannot_escape_the_extraction_directory(self):
+        epub = simple_book(toc="ncx").write_epub(self.tmp / "book.epub")
+        with zipfile.ZipFile(epub, "a") as zf:
+            zf.writestr("../../escaped.txt", "nope")
+        root = self.tmp / "root"
+        root.mkdir()
+        E._extract(epub, root)
+        self.assertTrue((root / "escaped.txt").exists())
+        self.assertFalse((self.tmp.parent / "escaped.txt").exists())
+
+    @requires_pandoc
+    def test_non_ascii_member_names_round_trip(self):
+        b = EpubBuilder()
+        b.add_item("text/第一章.xhtml", chapter("第一章"))
+        b.set_ncx([("第一章", "text/%E7%AC%AC%E4%B8%80%E7%AB%A0.xhtml")])
+        result, out = self.convert(b)
+        self.assertEqual(result.code, 0)
+        self.assertEqual(self.markdown_files(out), ["01-第一章.md"])
 
 
 if __name__ == "__main__":

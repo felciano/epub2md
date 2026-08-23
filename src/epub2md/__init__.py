@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, re, json, hashlib, subprocess, tempfile, shutil, unicodedata, posixpath
+import sys, re, json, hashlib, subprocess, tempfile, shutil, unicodedata, posixpath, zipfile
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -28,6 +28,14 @@ def _ln(tag): return tag.split("}", 1)[-1] if "}" in tag else tag
 def _parse_xml(path):
   try: return ET.parse(path)
   except (ET.ParseError, FileNotFoundError, OSError): return None
+
+def _extract(epub, root):
+  """Unpack an EPUB container.  ZipFile.extractall drops empty, '.' and '..'
+  path components, so a member cannot escape `root`."""
+  try:
+    with zipfile.ZipFile(epub) as archive: archive.extractall(root)
+  except (zipfile.BadZipFile, NotImplementedError, RuntimeError, OSError) as exc:
+    sys.exit(f"Error: cannot read {epub.name}: {exc}")
 
 def _read_text(path):
   try: return path.read_text(encoding="utf-8", errors="ignore")
@@ -639,7 +647,7 @@ def main():
 
   with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
-    subprocess.run(["unzip", "-q", str(epub), "-d", str(root)], check=True)
+    _extract(epub, root)
     lua = root / "f.lua"
     lua.write_text(LUA)
 
