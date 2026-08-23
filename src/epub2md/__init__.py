@@ -686,8 +686,8 @@ def main():
       write_manifest(out / "manifest.json", build_manifest(plan, epub, converted))
 
   print(f"\nDone! {n} chapters → {out}/")
-  if media.exists() and any(media.iterdir()):
-    print(f"{sum(1 for _ in media.rglob('*.*'))} images → {media}/")
+  images = sum(1 for p in media.rglob("*") if p.is_file() and p.name != ".gitignore")
+  if images: print(f"{images} images → {media}/")
   if want_manifest: print(f"manifest → {out}/manifest.json")
 
 if __name__ == "__main__": main()

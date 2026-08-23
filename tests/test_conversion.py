@@ -355,6 +355,16 @@ class ImageExtractionTest(EpubTestCase):
         b.set_ncx([("With Image", document_href)])
         return b
 
+    def test_a_book_without_images_reports_none(self):
+        result, out = self.convert(simple_book(toc="ncx"))
+        self.assertNotIn("images →", result.stdout)
+        self.assertEqual(list((out / "images").rglob("*.png")), [])
+
+    def test_the_reported_count_matches_the_files_extracted(self):
+        result, out = self.convert(self.book("pixel.png", "pixel.png", "ch01.xhtml"))
+        self.assertIn("1 images →", result.stdout)
+        self.assertEqual(len(list((out / "images").rglob("*.png"))), 1)
+
     def test_images_beside_the_package_document_are_extracted(self):
         _, out = self.convert(self.book("pixel.png", "pixel.png", "ch01.xhtml"))
         text = self.read(out, "01-with-image.md")
