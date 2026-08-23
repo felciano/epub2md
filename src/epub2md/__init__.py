@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, re, subprocess, tempfile, shutil, unicodedata, posixpath
+import sys, os, re, json, hashlib, subprocess, tempfile, shutil, unicodedata, posixpath
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -501,11 +501,121 @@ def _convert_chapter(plan, chapter, out, media, lua):
   if prefix in md: target.write_text(md.replace(prefix, "images/"), encoding="utf-8")
   return True, ""
 
+
+# --------------------------------------------------------------------------
+# Corpus manifest
+# --------------------------------------------------------------------------
+
+SCHEMA_VERSION = 1
+
+def _sha256(path):
+  digest = hashlib.sha256()
+  with open(path, "rb") as fh:
+    for block in iter(lambda: fh.read(1 << 20), b""): digest.update(block)
+  return digest.hexdigest()
+
+def _document_text(package, href, cache):
+  if href not in cache: cache[href] = _read_text(package.path(href)) or ""
+  return cache[href]
+
+def _position(package, href, fragment, spine_pos, cache):
+  """Where a target sits in reading order, as (spine position, byte offset)."""
+  index = spine_pos.get(href)
+  if index is None: return None
+  offset = 0
+  if fragment:
+    found = _find_anchor(_document_text(package, href, cache), fragment)
+    if found is not None: offset = found
+  return (index, offset)
+
+def _locate_toc_entries(plan):
+  """Map every TOC entry onto the generated chapter whose text contains it.
+
+  Chapters tile the spine in reading order, so an entry belongs to the last
+  chapter that starts at or before it.  Entries deeper than the split depth -
+  the sections and subsections that never became their own file - are located
+  this way too, which is what lets a reader jump from the manifest straight to
+  the right Markdown file.
+  """
+  package = plan.package
+  spine_pos = {d.href: i for i, d in enumerate(package.documents())}
+  cache, ladder, mapping = {}, [], {}
+  for chapter in plan.chapters:
+    start = chapter.primary
+    pos = _position(package, start.href, start.fragment_start, spine_pos, cache)
+    if pos is not None: ladder.append((pos, chapter.id))
+  ladder.sort()
+  for entry in package.toc:
+    if not entry.href: continue
+    pos = _position(package, entry.href, entry.fragment, spine_pos, cache)
+    if pos is None: continue
+    chosen = None
+    for chapter_pos, chapter_id in ladder:
+      if chapter_pos > pos: break
+      chosen = chapter_id
+    if chosen: mapping[entry.id] = chosen
+  for chapter in plan.chapters:
+    if chapter.toc_entry_id: mapping[chapter.toc_entry_id] = chapter.id
+  return mapping
+
+def build_manifest(plan, source, converted=None):
+  """Describe the generated corpus: metadata, structure and provenance.
+
+  Deterministic and portable - no timestamps, no absolute paths.  Every href is
+  relative to the EPUB container root and percent-decoded, so it names a file
+  inside the original archive.
+  """
+  package, converted = plan.package, converted or {}
+  chapter_ids = _locate_toc_entries(plan)
+  counts = package.depth_counts()
+  return {
+    "schema_version": SCHEMA_VERSION,
+    "source": {
+      "filename": Path(source).name,
+      "sha256": _sha256(source),
+      "package_document": package.opf_href,
+    },
+    "metadata": {name: list(getattr(package.metadata, name))
+                 for _, name in DC_FIELDS},
+    "structure": {
+      "source": plan.structure_source,
+      "toc_document": package.toc_href,
+      "toc_depth": max(counts) if counts else 0,
+      "split_depth": plan.split_depth,
+      "requested_depth": plan.requested_depth,
+      "spine_fallback": plan.spine_fallback,
+    },
+    "spine": [{"index": item.index, "idref": item.idref, "href": item.href,
+               "linear": item.linear} for item in package.spine],
+    "toc": [{"id": entry.id, "title": entry.title, "depth": entry.depth,
+             "parent_id": entry.parent_id, "path": list(entry.path),
+             "href": entry.href or None, "fragment": entry.fragment,
+             "chapter_id": chapter_ids.get(entry.id)} for entry in package.toc],
+    "chapters": [{
+      "id": chapter.id,
+      "order": chapter.order,
+      "title": chapter.title,
+      "status": "ok" if converted.get(chapter.id, True) else "failed",
+      "file": chapter.output_filename if converted.get(chapter.id, True) else None,
+      "toc_entry_id": chapter.toc_entry_id,
+      "sources": [{"href": s.href, "fragment_start": s.fragment_start,
+                   "fragment_end": s.fragment_end, "spine_index": s.spine_index}
+                  for s in chapter.sources],
+    } for chapter in plan.chapters],
+  }
+
+def write_manifest(path, data):
+  path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8")
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
-HELP = ("epub2md - Convert EPUB to Markdown\n\nUsage: epub2md <book.epub> [outdir]\n\n"
+HELP = ("epub2md - Convert EPUB to Markdown\n\n"
+        "Usage: epub2md [--depth N] [--manifest] <book.epub> [outdir]\n\n"
+        "  --depth N   TOC depth to split at (default: auto-detect)\n"
+        "  --manifest  also write <outdir>/manifest.json describing the corpus\n\n"
         "Output:\n  <outdir>/*.md: Markdown files\n  <outdir>/images/: Images\n\n"
         "Auto-detects optimal TOC depth for chapter splitting.")
 
@@ -515,6 +625,8 @@ def main():
     sys.exit(0)
 
   args = sys.argv[1:]
+  want_manifest = "--manifest" in args
+  args = [a for a in args if a != "--manifest"]
   max_depth = 0  # 0 = auto-detect
   if "--depth" in args:
     di = args.index("--depth")
@@ -549,16 +661,22 @@ def main():
     if plan.spine_fallback: print(f"Using spine: {len(plan.chapters)} files")
     if not plan.chapters: sys.exit("Error: no html chapters found")
 
+    converted = {}
     for chapter in plan.chapters:
       ok, err = _convert_chapter(plan, chapter, out, media, lua)
+      converted[chapter.id] = ok
       if ok: print(f"✓ {chapter.order:02d} {chapter.title}")
       else:
         print(f"✗ {chapter.title}")
         if err: print(f"  {err[:200]}")
     n = len(plan.chapters)
 
+    if want_manifest:
+      write_manifest(out / "manifest.json", build_manifest(plan, epub, converted))
+
   print(f"\nDone! {n} chapters → {out}/")
   if media.exists() and any(media.iterdir()):
     print(f"{sum(1 for _ in media.rglob('*.*'))} images → {media}/")
+  if want_manifest: print(f"manifest → {out}/manifest.json")
 
 if __name__ == "__main__": main()
