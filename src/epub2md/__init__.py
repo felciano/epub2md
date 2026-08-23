@@ -291,7 +291,12 @@ def read_package(root):
                      toc_source=source, toc_href=toc_href)
 
 def _auto_depth(depth_counts):
-  """Pick the shallowest depth with >= 3 entries, capping at 50 total."""
+  """Pick the shallowest TOC depth holding at least 3 entries cumulatively.
+
+  Returns 0 - meaning "no depth limit" - for a TOC with fewer than 3 entries in
+  total, which is what hands such books to the spine-coverage rule instead.
+  There is no upper bound on the number of chapters this can select.
+  """
   if not depth_counts: return 0
   cumulative = 0
   for d in sorted(depth_counts):

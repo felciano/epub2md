@@ -323,12 +323,13 @@ class AutoDepthTest(unittest.TestCase):
         self.assertEqual(E._auto_depth({1: 1}), 0)
         self.assertEqual(E._auto_depth({1: 2}), 0)
 
-    def test_docstring_promises_a_fifty_entry_cap_that_is_not_applied(self):
-        # CHARACTERIZATION: the docstring has said "capping at 50 total" since the
-        # function was introduced (e622d01) but no cap was ever implemented.
-        self.assertIn("50", E._auto_depth.__doc__)
+    def test_no_upper_bound_is_applied_to_the_entry_count(self):
+        # The docstring claimed "capping at 50 total" from the commit that
+        # introduced the function (e622d01) onwards, but no cap was ever written
+        # and the selected depth is not bounded by entry count.
         self.assertEqual(E._auto_depth({1: 400}), 1)
         self.assertEqual(E._auto_depth({1: 2, 2: 4000}), 2)
+        self.assertNotIn("50", E._auto_depth.__doc__)
 
 
 class ExtractTitleTest(EpubTestCase):
