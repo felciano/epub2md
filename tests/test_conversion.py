@@ -402,7 +402,7 @@ class CliContractTest(EpubTestCase):
     def test_no_arguments_prints_usage_and_exits_zero(self):
         result = run_cli()
         self.assertEqual(result.code, 0)
-        self.assertIn("Usage:", result.stdout)
+        self.assertIn("usage", result.stdout.lower())
 
     def test_help_flags_print_usage(self):
         for flag in ("-h", "--help"):
@@ -410,10 +410,48 @@ class CliContractTest(EpubTestCase):
             self.assertEqual(result.code, 0)
             self.assertIn("epub2md", result.stdout)
 
+    def test_help_documents_every_option(self):
+        stdout = run_cli("--help").stdout
+        self.assertIn("--depth", stdout)
+        self.assertIn("--manifest", stdout)
+
     def test_a_missing_epub_is_an_error(self):
         result = run_cli(self.tmp / "absent.epub")
         self.assertEqual(result.code, 1)
         self.assertIn("not found", result.error)
+
+    def test_a_non_numeric_depth_is_rejected(self):
+        epub = simple_book(toc="ncx").write_epub(self.tmp / "book.epub")
+        self.assertEqual(run_cli(epub, "--depth", "deep").code, 2)
+
+    def test_an_unknown_flag_is_rejected(self):
+        epub = simple_book(toc="ncx").write_epub(self.tmp / "book.epub")
+        self.assertEqual(run_cli(epub, "--manifests").code, 2)
+
+    def test_surplus_positional_arguments_are_rejected(self):
+        epub = simple_book(toc="ncx").write_epub(self.tmp / "book.epub")
+        self.assertEqual(run_cli(epub, "out", "extra").code, 2)
+
+    @requires_pandoc
+    def test_options_may_appear_before_or_after_the_positionals(self):
+        b = EpubBuilder()
+        b.add_chapter("text/p1.xhtml", "Part One")
+        b.add_chapter("text/ch01.xhtml", "Chapter One")
+        b.set_ncx([("Part One", "text/p1.xhtml",
+                    [("Chapter One", "text/ch01.xhtml")])])
+        epub = b.write_epub(self.tmp / "book.epub")
+        forms = {
+            "a": ("--depth", "1", epub, self.tmp / "a"),
+            "b": (epub, self.tmp / "b", "--depth", "1"),
+            "c": (epub, "--depth=1", self.tmp / "c"),
+            "d": (epub, "--depth", "1", self.tmp / "d"),
+            "e": ("--manifest", epub, "--depth", "1", self.tmp / "e"),
+        }
+        for name, argv in forms.items():
+            result = run_cli(*argv)
+            self.assertEqual(result.code, 0, argv)
+            self.assertEqual(self.markdown_files(self.tmp / name),
+                             ["01-part-one.md"], argv)
 
 
 class ArchiveExtractionTest(EpubTestCase):

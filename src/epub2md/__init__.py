@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, re, json, hashlib, subprocess, tempfile, shutil, unicodedata, posixpath, zipfile
+import sys, re, json, hashlib, argparse, subprocess, tempfile, shutil, unicodedata, posixpath, zipfile
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -613,29 +613,34 @@ def write_manifest(path, data):
 # CLI
 # --------------------------------------------------------------------------
 
-HELP = ("epub2md - Convert EPUB to Markdown\n\n"
-        "Usage: epub2md [--depth N] [--manifest] <book.epub> [outdir]\n\n"
-        "  --depth N   TOC depth to split at (default: auto-detect)\n"
-        "  --manifest  also write <outdir>/manifest.json describing the corpus\n\n"
-        "Output:\n  <outdir>/*.md: Markdown files\n  <outdir>/images/: Images\n\n"
-        "Auto-detects optimal TOC depth for chapter splitting.")
+def _build_parser():
+  parser = argparse.ArgumentParser(
+    prog="epub2md", description="Convert EPUB to clean Markdown chapters.",
+    epilog="Chapter boundaries come from the EPUB's own TOC; the split depth is "
+           "auto-detected unless --depth is given.")
+  parser.add_argument("epub", nargs="?", metavar="book.epub",
+                      help="the EPUB file to convert")
+  parser.add_argument("outdir", nargs="?",
+                      help="output directory (default: the EPUB's own name)")
+  parser.add_argument("--depth", type=int, default=0, metavar="N",
+                      help="TOC depth to split chapters at (default: auto-detect)")
+  parser.add_argument("--manifest", action="store_true",
+                      help="also write <outdir>/manifest.json describing the corpus")
+  return parser
 
 def main():
-  if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
-    print(HELP)
+  parser = _build_parser()
+  # parse_intermixed_args, not parse_args: the hand-rolled parser this replaced
+  # accepted options anywhere, and plain parse_args rejects an option sitting
+  # between the two positionals.
+  args = parser.parse_intermixed_args()
+  if args.epub is None:
+    parser.print_help()
     sys.exit(0)
 
-  args = sys.argv[1:]
-  want_manifest = "--manifest" in args
-  args = [a for a in args if a != "--manifest"]
-  max_depth = 0  # 0 = auto-detect
-  if "--depth" in args:
-    di = args.index("--depth")
-    max_depth = int(args[di + 1])
-    args = args[:di] + args[di + 2:]
-
-  epub = Path(args[0]).resolve()
-  out = Path(args[1] if len(args) > 1 else epub.stem).resolve()
+  max_depth, want_manifest = args.depth, args.manifest
+  epub = Path(args.epub).resolve()
+  out = Path(args.outdir if args.outdir else epub.stem).resolve()
   if not epub.exists(): sys.exit(f"Error: {epub} not found")
   if not shutil.which("pandoc"): sys.exit("Error: pandoc not found")
 
