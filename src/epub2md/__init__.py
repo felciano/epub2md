@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, os, re, json, hashlib, subprocess, tempfile, shutil, unicodedata, posixpath
+import sys, re, json, hashlib, subprocess, tempfile, shutil, unicodedata, posixpath
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -326,7 +326,6 @@ class ChapterPlan:
 class ConversionPlan:
   package: EpubPackage
   chapters: List[ChapterPlan]
-  base_href: str                  # pandoc working directory, internal only
   structure_source: str           # epub3-nav | epub2-ncx | spine
   requested_depth: int
   split_depth: int
@@ -413,10 +412,8 @@ def plan_conversion(package, max_depth=0):
                 sources=sources, output_filename=_chapter_filename(title, i))
     for i, (title, entry_id, sources) in enumerate(drafts, 1)]
 
-  base_href = posixpath.dirname(
-    package.toc_href if source != "spine" and package.toc_href else package.opf_href)
   return ConversionPlan(
-    package=package, chapters=chapters, base_href=base_href,
+    package=package, chapters=chapters,
     structure_source=source, requested_depth=max_depth, split_depth=split_depth,
     toc_entry_count=toc_entry_count, spine_fallback=spine_fallback,
     coverage=coverage)
@@ -480,15 +477,17 @@ def _chapter_snippet(package, chapter):
 
 def _convert_chapter(plan, chapter, out, media, lua):
   package = plan.package
-  base = package.root / plan.base_href if plan.base_href else package.root
+  document = package.path(chapter.primary.href)
   snippet = _chapter_snippet(package, chapter)
   target = out / chapter.output_filename
-  source = ["-"] if snippet else [
-    os.path.relpath(package.path(chapter.primary.href), base)]
+  # pandoc resolves relative resource paths against its working directory, so
+  # run it beside the content document: that is what the document's own image
+  # hrefs are relative to.  Merged chapters use the first document's directory.
   r = subprocess.run(
-    ["pandoc", *source, "-f", "html", "-t", "gfm", "--wrap=none",
-     "--lua-filter", str(lua), "--extract-media", str(media), "-o", str(target)],
-    cwd=base, capture_output=True, text=True, input=snippet)
+    ["pandoc", *(["-"] if snippet else [document.name]), "-f", "html", "-t", "gfm",
+     "--wrap=none", "--lua-filter", str(lua), "--extract-media", str(media),
+     "-o", str(target)],
+    cwd=document.parent, capture_output=True, text=True, input=snippet)
   if r.returncode != 0: return False, r.stderr
   prefix = str(media) + "/"
   md = target.read_text(encoding="utf-8")

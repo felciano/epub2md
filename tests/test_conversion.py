@@ -360,24 +360,41 @@ class ImageExtractionTest(EpubTestCase):
         self.assertNotIn(str(out), text)
         self.assertTrue(any((out / "images").rglob("*.png")))
 
-    def test_images_referenced_from_a_subdirectory_are_currently_lost(self):
-        # CHARACTERIZATION OF A BUG: pandoc resolves relative resource paths
-        # against its working directory, which epub2md sets to the package (or
-        # TOC) directory rather than the content document's own directory.  The
-        # very common OEBPS/text/*.xhtml + OEBPS/images/* layout therefore loses
-        # every image.
+    def test_images_referenced_from_a_subdirectory_are_extracted(self):
+        # The common OEBPS/text/*.xhtml + OEBPS/images/* layout.  The reference
+        # escapes the document's directory, so pandoc names the extracted file
+        # after its content rather than preserving the path.
         _, out = self.convert(
             self.book("images/pixel.png", "../images/pixel.png", "text/ch01.xhtml")
         )
         text = self.read(out, "01-with-image.md")
-        self.assertIn("image placeholder", text)
-        self.assertEqual(list((out / "images").rglob("*.png")), [])
+        self.assertNotIn("image placeholder", text)
+        self.assertRegex(text, r"!\[dot\]\(images/[0-9a-f]+\.png\)")
+        self.assertEqual(len(list((out / "images").rglob("*.png"))), 1)
 
-    def test_images_beside_a_nested_document_are_also_lost(self):
+    def test_images_beside_a_nested_document_are_extracted(self):
         _, out = self.convert(
             self.book("text/pixel.png", "pixel.png", "text/ch01.xhtml")
         )
-        self.assertIn("image placeholder", self.read(out, "01-with-image.md"))
+        text = self.read(out, "01-with-image.md")
+        self.assertIn("![dot](images/pixel.png)", text)
+        self.assertTrue((out / "images" / "pixel.png").exists())
+
+    def test_images_survive_fragment_slicing(self):
+        b = EpubBuilder()
+        b.add_item("images/pixel.png", PIXEL_PNG, media_type="image/png",
+                   in_spine=False)
+        b.add_item("text/all.xhtml", (
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+            '<section id="a"><h2>One</h2>'
+            '<p><img src="../images/pixel.png" alt="dot"/></p></section>'
+            '<section id="b"><h2>Two</h2></section>'
+            "</body></html>"))
+        b.set_ncx([("One", "text/all.xhtml#a"), ("Two", "text/all.xhtml#b")])
+        _, out = self.convert(b)
+        self.assertNotIn("image placeholder", self.read(out, "01-one.md"))
+        self.assertEqual(len(list((out / "images").rglob("*.png"))), 1)
 
 class CliContractTest(EpubTestCase):
     def test_no_arguments_prints_usage_and_exits_zero(self):
