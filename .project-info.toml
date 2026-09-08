@@ -1,0 +1,3 @@
+# Display name for zellij pane titles and cmux workspace names.
+# Format and rationale: agentic-dev/conventions/project-info.md
+pretty_name = "epub2md"
